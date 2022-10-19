@@ -1,8 +1,8 @@
 import { contractAddresses, abi } from "../constants";
 import { useMoralis, useWeb3Contract } from "react-moralis";
 import { useEffect, useState } from "react";
-//import { useNotification } from "web3uikit";
-import { CryptoCards, Button } from "@web3uikit/web3";
+import { useNotification } from "@web3uikit/core";
+//import { CryptoCards, Button } from "@web3uikit/web3";
 import { ethers } from "ethers";
 
 export default function LotteryEntrance() {
@@ -11,10 +11,18 @@ export default function LotteryEntrance() {
     const raffleAddress = chainId in contractAddresses ? contractAddresses[chainId][0] : null;
 
     const [entranceFee, setEntranceFee] = useState("0");
+    const [numberOfPlayers, setNumberOfPlayers] = useState("0");
+    const [recentWinner, setRecentWinner] = useState("0");
 
-    const { runContractFunction: enterRaffle } = useWeb3Contract({
+    const dispatch = useNotification();
+
+    const {
+        runContractFunction: enterRaffle,
+        isLoading,
+        isFetching,
+    } = useWeb3Contract({
         abi: abi,
-        contractAddress: contractAddresses,
+        contractAddress: raffleAddress,
         functionName: "enterRaffle",
         params: {},
         msgValue: entranceFee,
@@ -26,30 +34,88 @@ export default function LotteryEntrance() {
         params: {},
     });
 
+    const { runContractFunction: getNumberOfPlayers } = useWeb3Contract({
+        abi: abi,
+        contractAddress: raffleAddress, // specify the networkId
+        functionName: "getNumberOfPlayers",
+        params: {},
+    });
+
+    const { runContractFunction: getRecentWinner } = useWeb3Contract({
+        abi: abi,
+        contractAddress: raffleAddress, // specify the networkId
+        functionName: "getRecentWinner",
+        params: {},
+    });
+
+    async function updateUI() {
+        // Another way we could make a contract call:
+        // const options = { abi, contractAddress: raffleAddress }
+        // const fee = await Moralis.executeFunction({
+        //     functionName: "getEntranceFee",
+        //     ...options,
+        // })
+        const entranceFeeFromCall = (await getEntranceFee()).toString();
+        const numPlayersFromCall = (await getNumberOfPlayers()).toString();
+        const recentWinnerFromCall = await getRecentWinner();
+        setEntranceFee(entranceFeeFromCall);
+        setNumberOfPlayers(numPlayersFromCall);
+        setRecentWinner(recentWinnerFromCall);
+    }
+
     useEffect(() => {
         if (isWeb3Enabled) {
-            async function updateUI() {
-                const entranceFeeFromCall = await getEntranceFee();
-                setEntranceFee(entranceFeeFromCall);
-            }
             updateUI();
         }
     }, [isWeb3Enabled]);
 
+    const handleNewNotification = () => {
+        dispatch({
+            type: "info",
+            message: "Transaction Complete!",
+            title: "Transaction Notification",
+            position: "topR",
+            icon: "bell",
+        });
+    };
+
+    const handleSuccess = async (tx) => {
+        try {
+            await tx.wait(1);
+            //updateUIValues()
+            handleNewNotification(tx);
+            updateUI();
+        } catch (error) {
+            console.log(error);
+        }
+    };
+
     return (
-        <div>
-            Hi from LotteryEntrance
+        <div className="p-5">
+            <h1 className="py-4 px-4 font-bold text-3xl">Lottery</h1>
             {raffleAddress ? (
                 <div>
                     <button
-                        onClick={async function () {
-                            await enterRaffle();
-                            console.log("hjhkjbh");
-                        }}
+                        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded ml-auto"
+                        onClick={async () =>
+                            await enterRaffle({
+                                // onComplete:
+                                // onError:
+                                onSuccess: handleSuccess,
+                                onError: (error) => console.log(error),
+                            })
+                        }
+                        disabled={isLoading || isFetching}
                     >
-                        Enter Raffle
+                        {isLoading || isFetching ? (
+                            <div className="animate-spin spinner-border h-8 w-8 border-b-2 rounded-full"></div>
+                        ) : (
+                            "Enter Raffle"
+                        )}
                     </button>
-                    Entrance Fee: {ethers.utils.formatUnits(entranceFee, "ether")} Eth
+                    <div>Entrance Fee: {ethers.utils.formatUnits(entranceFee, "ether")} ETH</div>
+                    <div>The current number of players is: {numberOfPlayers}</div>
+                    <div>The most previous winner was: {recentWinner}</div>
                 </div>
             ) : (
                 <div>No Raffle Address Detect !</div>
